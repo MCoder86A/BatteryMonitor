@@ -14,22 +14,20 @@ import android.net.Uri;
 import android.os.BatteryManager;
 import android.os.Build;
 import android.os.IBinder;
-import android.util.Log;
 
 import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
 
-public class ForegroundBatteryMonitor extends Service {
+public class ForegroundBatteryMonitor extends Service implements BatteryMonitorCallback{
    BroadcastReceiver br;
-   boolean isServiceRunning = false;
    int thresh_lvl;
    public static final String CHANNEL_ID = "ForegroundServiceChannel";
    final String TAG = "batteryMonitorWorker";
+   Ringtone r;
 
    @Override
    public void onCreate() {
       super.onCreate();
-      isServiceRunning = true;
    }
    @Override
    public int onStartCommand(Intent intent, int flags, int startId) {
@@ -48,41 +46,18 @@ public class ForegroundBatteryMonitor extends Service {
               .build();
       startForeground(1, notification);
 
-      new Thread(new Runnable() {
-         @Override
-         public void run() {
-            Uri notification = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM);
-            Ringtone r = RingtoneManager.getRingtone(getApplicationContext(), notification);
-            BatteryManager bm = (BatteryManager) getApplicationContext()
-                    .getSystemService(BATTERY_SERVICE);
-            while(isServiceRunning) {
-               int lvl = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY);
-               if(lvl>=thresh_lvl && !r.isPlaying()){
-                  r.play();
-               }
+      Uri ringtoneUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM);
+      r = RingtoneManager.getRingtone(getApplicationContext(), ringtoneUri);
 
-               try {
-                  Thread.sleep(30000);
-               } catch (InterruptedException e) {
-                  e.printStackTrace();
-               }
-            }
-            if(r.isPlaying()){
-               r.stop();
-            }
-         }
-      }).start();
-      br = new TestBroadcast();
+      br = new BatteryChangedBroadcast(thresh_lvl, this);
       IntentFilter If = new IntentFilter(Intent.ACTION_BATTERY_CHANGED);
       registerReceiver(br, If);
-      //do heavy work on a background thread
-      //stopSelf();
+
       return START_NOT_STICKY;
    }
    @Override
    public void onDestroy() {
       super.onDestroy();
-      isServiceRunning = false;
       unregisterReceiver(br);
    }
    @Nullable
@@ -90,6 +65,25 @@ public class ForegroundBatteryMonitor extends Service {
    public IBinder onBind(Intent intent) {
       return null;
    }
+
+   @Override
+   public void playNotification(){
+      r.play();
+   }
+
+   @Override
+   public boolean isPlaying() {
+      if(r.isPlaying()){
+         return true;
+      }
+      else return false;
+   }
+
+   @Override
+   public void stopNotification() {
+      r.stop();
+   }
+
    private void createNotificationChannel() {
       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
          NotificationChannel serviceChannel = new NotificationChannel(
